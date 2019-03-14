@@ -88,19 +88,19 @@ static void check_multi_info(void) {
     CURLMsg *message;
     int pending;
 
-    CURL *easy_handle;
+    CURL *ez;
     memory_t *buffer;
 
     while ((message = curl_multi_info_read(curl_multi_handle, &pending))) {
         switch (message->msg) {
             case CURLMSG_DONE:
-                easy_handle = message->easy_handle;
-                curl_easy_getinfo(easy_handle, CURLINFO_EFFECTIVE_URL, &done_url);
-                curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &buffer);
+                ez = message->easy_handle;
+                curl_easy_getinfo(ez, CURLINFO_EFFECTIVE_URL, &done_url);
+                curl_easy_getinfo(ez, CURLINFO_PRIVATE, &buffer);
                 fprintf(stderr, "Finished fetching %s. DONE\n", done_url);
 
-                curl_multi_remove_handle(curl_multi_handle, easy_handle);
-                curl_easy_cleanup(easy_handle);
+                curl_multi_remove_handle(curl_multi_handle, ez);
+                curl_easy_cleanup(ez);
                 if (buffer) {
                     printf("buffer = \"%s\"", buffer->memory);
                     free(buffer->memory);
@@ -148,13 +148,12 @@ static int start_timeout(CURLM *curl_multi, long timeout_ms, void *userp) {
         if (timeout_ms == 0) {
             timeout_ms = 1;
         }
-        // fprintf(stderr, "starting timeout with timeout_ms = %lu\n", timeout_ms);
         uv_timer_start(timeout, on_timeout, timeout_ms, 0);
     }
     return 0;
 }
 
-static int handle_socket(CURL *curl_easy, curl_socket_t curl_sock, int action, void *userp, void *socketp) {
+static int handle_socket(CURL *ez, curl_socket_t curl_sock, int action, void *userp, void *socketp) {
     curl_context_t *curl_context;
     int events = 0;
 
