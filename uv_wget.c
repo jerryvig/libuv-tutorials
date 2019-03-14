@@ -56,11 +56,12 @@ static void add_download(const char *url, int num) {
         return;
     }
 
-    CURL *curl_easy = curl_easy_init();
-    curl_easy_setopt(curl_easy, CURLOPT_WRITEDATA, file);
-    curl_easy_setopt(curl_easy, CURLOPT_PRIVATE, file);
-    curl_easy_setopt(curl_easy, CURLOPT_URL, url);
-    curl_multi_add_handle(curl_multi_handle, curl_easy);
+    CURL *ez = curl_easy_init();
+    curl_easy_setopt(ez, CURLOPT_WRITEDATA, file);
+    curl_easy_setopt(ez, CURLOPT_PRIVATE, file);
+    curl_easy_setopt(ez, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    curl_easy_setopt(ez, CURLOPT_URL, url);
+    curl_multi_add_handle(curl_multi_handle, ez);
     fprintf(stderr, "Added download->file %s -> %s\n", url, filename);
 }
 
@@ -183,6 +184,7 @@ int run_loop(char* urls[], int url_count) {
 
     //initialize the curl multi handle and set the socket and timer callbacks.
     curl_multi_handle = curl_multi_init();
+    curl_multi_setopt(curl_multi_handle, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
     curl_multi_setopt(curl_multi_handle, CURLMOPT_SOCKETFUNCTION, handle_socket);
     curl_multi_setopt(curl_multi_handle, CURLMOPT_TIMERFUNCTION, start_timeout);
 
