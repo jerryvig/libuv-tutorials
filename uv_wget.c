@@ -68,23 +68,19 @@ static void destroy_curl_context(curl_context_t *context) {
 }
 
 static void add_download(const char *url, int num) {
-    char filename[50];
-    memset(filename, 0, 50);
-    sprintf(filename, "%d.download", num);
-
-    FILE *file = fopen(filename, "wb");
-    if (!file) {
-        fprintf(stderr, "Error opening file %s.\n", filename);
-        return;
-    }
+    memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
+    buffer->memory = (char*)malloc(1);
+    buffer->size = 0;
 
     CURL *ez = curl_easy_init();
-    curl_easy_setopt(ez, CURLOPT_WRITEDATA, file);
-    curl_easy_setopt(ez, CURLOPT_PRIVATE, file);
+    curl_easy_setopt(ez, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(ez, CURLOPT_WRITEDATA, (void*)buffer);
+    curl_easy_setopt(ez, CURLOPT_PRIVATE, buffer);
     curl_easy_setopt(ez, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
+    curl_easy_setopt(ez, CURLOPT_USERAGENT, "libcurl-agent/1.0");
     curl_easy_setopt(ez, CURLOPT_URL, url);
     curl_multi_add_handle(curl_multi_handle, ez);
-    fprintf(stderr, "Added download->file %s -> %s\n", url, filename);
+    fprintf(stderr, "Added download->buffer %s\n", url);
 }
 
 static void check_multi_info(void) {
@@ -93,20 +89,22 @@ static void check_multi_info(void) {
     int pending;
 
     CURL *easy_handle;
-    FILE *file;
+    memory_t *buffer;
 
     while ((message = curl_multi_info_read(curl_multi_handle, &pending))) {
         switch (message->msg) {
             case CURLMSG_DONE:
                 easy_handle = message->easy_handle;
                 curl_easy_getinfo(easy_handle, CURLINFO_EFFECTIVE_URL, &done_url);
-                curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &file);
+                curl_easy_getinfo(easy_handle, CURLINFO_PRIVATE, &buffer);
                 fprintf(stderr, "Finished fetching %s. DONE\n", done_url);
 
                 curl_multi_remove_handle(curl_multi_handle, easy_handle);
                 curl_easy_cleanup(easy_handle);
-                if (file) {
-                    fclose(file);
+                if (buffer) {
+                    printf("buffer = \"%s\"", buffer->memory);
+                    free(buffer->memory);
+                    free(buffer);
                 }
                 break;
             default:
