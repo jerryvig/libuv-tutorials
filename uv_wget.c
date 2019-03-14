@@ -19,6 +19,28 @@ typedef struct curl_context_s {
     curl_socket_t sockfd;
 } curl_context_t;
 
+typedef struct {
+    char *memory;
+    size_t size;
+} memory_t;
+
+static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+    size_t realsize = size * nmemb;
+    memory_t *mem = (memory_t*)userp;
+
+    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
+    if (ptr == NULL) {
+        fprintf(stderr, "Insufficient memory (realloc returned NULL)\n");
+        return 0;
+    }
+
+    mem->memory = ptr;
+    memcpy(&(mem->memory[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->memory[mem->size] = 0;
+    return realsize;
+}
+
 static curl_context_t* create_curl_context(curl_socket_t sockfd) {
     //allocate the curl context for the socket.
     curl_context_t *context = (curl_context_t*)malloc(sizeof(curl_context_t));
