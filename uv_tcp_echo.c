@@ -16,6 +16,7 @@
 
 static uv_loop_t *loop;
 static struct sockaddr_in addr;
+static uv_tcp_t *tcp_echo_server;
 
 typedef struct {
     uv_write_t req;
@@ -41,6 +42,8 @@ void echo_write(uv_write_t *req, int status) {
     if (status) {
         fprintf(stderr, "Write error %s\n", uv_strerror(status));
     }
+    fprintf(stderr, "closing the send handle mofo\n");
+    uv_close((uv_handle_t*)req->handle, on_close);
     free_write_req(req);
 }
 
@@ -76,14 +79,14 @@ void on_new_connection(uv_stream_t *server, int status) {
 int main(void) {
     loop = uv_default_loop();
 
-    uv_tcp_t *server = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
+    tcp_echo_server = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
 
-    uv_tcp_init(loop, server);
+    uv_tcp_init(loop, tcp_echo_server);
 
     uv_ip4_addr("0.0.0.0", DEFAULT_PORT, &addr);
 
-    uv_tcp_bind(server, (const struct sockaddr*)&addr, 0);
-    int r = uv_listen((uv_stream_t*)server, DEFAULT_BACKLOG, on_new_connection);
+    uv_tcp_bind(tcp_echo_server, (const struct sockaddr*)&addr, 0);
+    int r = uv_listen((uv_stream_t*)tcp_echo_server, DEFAULT_BACKLOG, on_new_connection);
     if (r) {
         fprintf(stderr, "Listen error %s\n", uv_strerror(r));
         return EXIT_FAILURE;
@@ -92,6 +95,6 @@ int main(void) {
     printf("TCP echo server running on port %d...\n", DEFAULT_PORT);
     uv_run(loop, UV_RUN_DEFAULT);
 
-    free(server);
+    free(tcp_echo_server);
     return EXIT_SUCCESS;
 }
