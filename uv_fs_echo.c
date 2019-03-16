@@ -16,6 +16,14 @@ static char *prompt = "Enter input data here: ";
 
 static void on_stdin_read(uv_fs_t *req);
 
+static void on_sigint(uv_signal_t *sig, int signum) {
+    uv_signal_stop(sig);
+    uv_close((uv_handle_t*)sig, NULL);
+    uv_fs_req_cleanup(&stdin_watcher);
+    uv_fs_req_cleanup(&stdout_watcher);
+    uv_kill(getpid(), SIGTERM);
+}
+
 static void init_watchers() {
     memset(stdin_buffer, 0, BUFFER_SIZE);
     uv_buf_t stdin_buf = uv_buf_init(stdin_buffer, BUFFER_SIZE);
@@ -45,6 +53,11 @@ static void on_stdin_read(uv_fs_t *req) {
 
 int main(void) {
     loop = uv_default_loop();
+
+    uv_signal_t sigint_watcher;
+    uv_signal_init(loop, &sigint_watcher);
+    uv_signal_start(&sigint_watcher, on_sigint, SIGINT);
+
     init_watchers();
     return uv_run(loop, UV_RUN_DEFAULT);
 }
