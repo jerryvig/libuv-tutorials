@@ -199,12 +199,12 @@ static void on_timeout(uv_timer_t *req) {
 
 static int start_timeout(CURLM *curl_multi, long timeout_ms, void *userp) {
     if (timeout_ms < 0) {
-        uv_timer_stop(timeout);
+        uv_timer_stop(&timeout);
     } else {
         if (timeout_ms == 0) {
             timeout_ms = 1;
         }
-        uv_timer_start(timeout, on_timeout, timeout_ms, 0);
+        uv_timer_start(&timeout, on_timeout, timeout_ms, 0);
     }
     return 0;
 }
@@ -253,6 +253,10 @@ static CURLM *create_and_init_curl_multi() {
 }
 
 CURL *create_and_init_curl(void) {
+    memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
+    buffer->memory = (char*)malloc(1);
+    buffer->size = 0;
+
     CURL *ez = curl_easy_init();
     curl_easy_setopt(ez, CURLOPT_USERAGENT, "libcurl-agent/1.0");
     curl_easy_setopt(ez, CURLOPT_COOKIEFILE, "");
@@ -264,7 +268,10 @@ CURL *create_and_init_curl(void) {
     curl_easy_setopt(ez, CURLOPT_TCP_NODELAY, 0);
     curl_easy_setopt(ez, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     curl_easy_setopt(ez, CURLOPT_WRITEFUNCTION, &write_callback);
+    curl_easy_setopt(ez, CURLOPT_WRITEDATA, (void*)buffer);
+    curl_easy_setopt(ez, CURLOPT_PRIVATE, buffer);
     curl_easy_setopt(ez, CURLOPT_HEADERFUNCTION, &header_callback);
+    //do header data here.
     return ez;
 }
 
@@ -273,12 +280,12 @@ static void create_and_init_multi_ez() {
     for (register int i = 0; i < POOL_SIZE; ++i) {
         curl_multi_ez.ez_pool[i] = create_and_init_curl();
 
-        memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
+        /* memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
         buffer->memory = (char*)malloc(1);
         buffer->size = 0;
 
         curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_WRITEDATA, (void*)buffer);
-        curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_PRIVATE, buffer);
+        curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_PRIVATE, buffer); */
     }
 }
 
