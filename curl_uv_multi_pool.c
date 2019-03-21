@@ -267,6 +267,7 @@ int run_loop(const char* urls[], const int url_count) {
     //TODO: cleanup all of the ez handles and their write-buffers here.
 
     curl_multi_cleanup(curl_multi_ez.curl_multi);
+    curl_global_cleanup();
     free(timeout);
     return 0;
 }
