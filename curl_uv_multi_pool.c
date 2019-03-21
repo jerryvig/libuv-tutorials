@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <uv.h>
 #include <curl/curl.h>
 
@@ -26,6 +27,11 @@ typedef struct {
     CURL *ez_pool[POOL_SIZE];
     CURLM *curl_multi;
 } curl_multi_ez_t;
+
+typedef struct {
+    memory_t *buffer;
+    char *ticker_string;
+} ez_private_data;
 
 static uv_loop_t *loop;
 static uv_timer_t timeout;
@@ -83,7 +89,7 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *us
         const char *filename = strstr(buffer, "filename=");
         const char *period = strstr(&filename[9], ".");
         char *ticker = (char*)userdata;
-        memset(ticker, 0, 8);
+        memset(ticker, 0, 16);
         strncpy(ticker, &filename[9], strlen(&filename[9]) - strlen(period));
     }
     return nitems * size;
@@ -131,17 +137,18 @@ static void check_multi_info(void) {
     int pending;
 
     CURL *ez;
-    memory_t *buffer;
+    ez_private_data *private_data;
 
     while ((message = curl_multi_info_read(curl_multi_ez.curl_multi, &pending))) {
         switch (message->msg) {
             case CURLMSG_DONE:
                 ez = message->easy_handle;
                 curl_easy_getinfo(ez, CURLINFO_EFFECTIVE_URL, &done_url);
-                curl_easy_getinfo(ez, CURLINFO_PRIVATE, &buffer);
+                curl_easy_getinfo(ez, CURLINFO_PRIVATE, &private_data);
                 fprintf(stderr, "Finished fetching %s. DONE\n", done_url);
 
-                if (buffer) {
+                if (private_data) {
+                    memory_t *buffer = private_data->buffer;
                     printf("buffer = %s\n", buffer->memory);
 
                     //You would begin processing the data here, so I think this is where
@@ -153,6 +160,7 @@ static void check_multi_info(void) {
 
                 //check if there are more downloads to add to the multihandle.
                 if (transfers < num_urls) {
+                    memory_t *buffer = private_data->buffer;
                     free(buffer->memory);
 
                     //Reset the buffer on the ez handle.
@@ -256,6 +264,12 @@ CURL *create_and_init_curl(void) {
     memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
     buffer->memory = (char*)malloc(1);
     buffer->size = 0;
+    char *ticker_string = (char*)malloc(16 * sizeof(char));
+    memset(ticker_string, 0, 16);
+
+    ez_private_data *private_data = (ez_private_data*)malloc(sizeof(ez_private_data));
+    private_data->buffer = buffer;
+    private_data->ticker_string = ticker_string;
 
     CURL *ez = curl_easy_init();
     curl_easy_setopt(ez, CURLOPT_USERAGENT, "libcurl-agent/1.0");
@@ -269,9 +283,9 @@ CURL *create_and_init_curl(void) {
     curl_easy_setopt(ez, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     curl_easy_setopt(ez, CURLOPT_WRITEFUNCTION, &write_callback);
     curl_easy_setopt(ez, CURLOPT_WRITEDATA, (void*)buffer);
-    curl_easy_setopt(ez, CURLOPT_PRIVATE, buffer);
+    curl_easy_setopt(ez, CURLOPT_PRIVATE, private_data);
     curl_easy_setopt(ez, CURLOPT_HEADERFUNCTION, &header_callback);
-    //do header data here.
+    curl_easy_setopt(ez, CURLOPT_HEADERDATA, (void*)ticker_string);
     return ez;
 }
 
@@ -279,26 +293,21 @@ static void create_and_init_multi_ez() {
     curl_multi_ez.curl_multi = create_and_init_curl_multi();
     for (register int i = 0; i < POOL_SIZE; ++i) {
         curl_multi_ez.ez_pool[i] = create_and_init_curl();
-
-        /* memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
-        buffer->memory = (char*)malloc(1);
-        buffer->size = 0;
-
-        curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_WRITEDATA, (void*)buffer);
-        curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_PRIVATE, buffer); */
     }
 }
 
 static void cleanup_curl_multi_ez() {
     for (register int i = 0; i < POOL_SIZE; ++i) {
         CURL *ez = curl_multi_ez.ez_pool[i];
-        memory_t *buffer;
-        curl_easy_getinfo(curl_multi_ez.ez_pool[i], CURLINFO_PRIVATE, &buffer);
-        if (buffer != NULL) {
-            if (buffer->memory != NULL) {
-                free(buffer->memory);
+        ez_private_data *private_data;
+        curl_easy_getinfo(curl_multi_ez.ez_pool[i], CURLINFO_PRIVATE, &private_data);
+        if (private_data != NULL) {
+            if (private_data->buffer->memory != NULL) {
+                free(private_data->buffer->memory);
             }
-            free(buffer);
+            free(private_data->buffer);
+            free(private_data->ticker_string);
+            free(private_data);
         }
         curl_easy_cleanup(curl_multi_ez.ez_pool[i]);
     }
