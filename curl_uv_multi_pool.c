@@ -70,7 +70,7 @@ static char *urls[] = {
 };
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-    size_t realsize = size * nmemb;
+    const size_t realsize = size * nmemb;
     memory_t *mem = (memory_t*)userp;
 
     char *ptr = realloc(mem->memory, mem->size + realsize + 1);
@@ -120,7 +120,7 @@ static void after_work(uv_work_t *job, int status) {
 }
 
 static void do_work(uv_work_t *job) {
-    char *response_text = (char*)job->data;
+    const char *response_text = (char*)job->data;
     char title[128];
     if (!get_title(response_text, title)) {
         printf("extracted the title as \"%s\".\n", title);
@@ -154,11 +154,9 @@ static void destroy_curl_context(curl_context_t *context) {
 }
 
 static void add_download(const char *url, int num) {
-    int ez_pool_idx = num % EZ_POOL_SIZE;
-
+    const int ez_pool_idx = num % EZ_POOL_SIZE;
     CURL *ez = curl_multi_ez.ez_pool[ez_pool_idx];
     curl_easy_setopt(ez, CURLOPT_URL, url);
-
     curl_multi_add_handle(curl_multi_ez.curl_multi, ez);
     fprintf(stderr, "Added download->buffer %s\n", url);
 }
@@ -382,10 +380,10 @@ int run_loop(const char* urls[], const int url_count) {
 int main(void) {
     putenv("UV_THREADPOOL_SIZE=" STRINGIFY(THREAD_POOL_SIZE));
 
-    num_urls = sizeof(urls) / sizeof(char *);
+    num_urls = sizeof(urls) / sizeof(char*);
 
-    int loop_success = run_loop(urls, num_urls);
-    if (!loop_success) {
+    int loop_failure = run_loop(urls, num_urls);
+    if (loop_failure) {
         return EXIT_FAILURE;
     }
 
