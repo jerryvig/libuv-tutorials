@@ -25,10 +25,10 @@ typedef struct {
     size_t size;
 } memory_t;
 
-#define POOL_SIZE 4
+#define EZ_POOL_SIZE 4
 
 typedef struct {
-    CURL *ez_pool[POOL_SIZE];
+    CURL *ez_pool[EZ_POOL_SIZE];
     CURLM *curl_multi;
 } curl_multi_ez_t;
 
@@ -133,11 +133,11 @@ static curl_context_t* create_curl_context(curl_socket_t sockfd) {
     //set the context's socket-file-descriptor
     context->sockfd = sockfd;
 
-    //initialize polling on the socket's file descriptor.
+    //initialize the uv poller on the socket's file descriptor.
     int r = uv_poll_init_socket(loop, &context->poll_handle, sockfd);
     assert(r == 0);
 
-    //set the data for poll_handle to the context.
+    //set the data for poll_handle to point back to the context.
     context->poll_handle.data = context;
     return context;
 }
@@ -154,7 +154,7 @@ static void destroy_curl_context(curl_context_t *context) {
 }
 
 static void add_download(const char *url, int num) {
-    int ez_pool_idx = num % POOL_SIZE;
+    int ez_pool_idx = num % EZ_POOL_SIZE;
 
     CURL *ez = curl_multi_ez.ez_pool[ez_pool_idx];
     curl_easy_setopt(ez, CURLOPT_URL, url);
@@ -183,6 +183,7 @@ static void check_multi_info(void) {
                     memory_t *buffer = private_data->buffer;
 
                     //queue the job on the worker thread in the thread pool.
+                    //add this job to the uv work queue.
                     uv_work_t *job = (uv_work_t*)malloc(sizeof(uv_work_t));
                     job->data = (void*)buffer->memory;
                     uv_queue_work(loop, job, do_work, after_work);
@@ -267,6 +268,7 @@ static int handle_socket(CURL *ez, curl_socket_t curl_sock, int action, void *us
                 events |= UV_READABLE;
             }
 
+            //start polling with uv.
             uv_poll_start(&curl_context->poll_handle, events, curl_perform);
             break;
 
@@ -286,7 +288,7 @@ static int handle_socket(CURL *ez, curl_socket_t curl_sock, int action, void *us
 
 static CURLM *create_and_init_curl_multi() {
     CURLM *multi_handle = curl_multi_init();
-    curl_multi_setopt(multi_handle, CURLMOPT_MAXCONNECTS, (long)POOL_SIZE);
+    curl_multi_setopt(multi_handle, CURLMOPT_MAXCONNECTS, (long)EZ_POOL_SIZE);
     curl_multi_setopt(multi_handle, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
     curl_multi_setopt(multi_handle, CURLMOPT_SOCKETFUNCTION, handle_socket);
     curl_multi_setopt(multi_handle, CURLMOPT_TIMERFUNCTION, start_timeout);
@@ -324,13 +326,13 @@ CURL *create_and_init_curl(void) {
 
 static void create_and_init_multi_ez() {
     curl_multi_ez.curl_multi = create_and_init_curl_multi();
-    for (register int i = 0; i < POOL_SIZE; ++i) {
+    for (register int i = 0; i < EZ_POOL_SIZE; ++i) {
         curl_multi_ez.ez_pool[i] = create_and_init_curl();
     }
 }
 
 static void cleanup_curl_multi_ez() {
-    for (register int i = 0; i < POOL_SIZE; ++i) {
+    for (register int i = 0; i < EZ_POOL_SIZE; ++i) {
         CURL *ez = curl_multi_ez.ez_pool[i];
         ez_private_data *private_data;
         curl_easy_getinfo(curl_multi_ez.ez_pool[i], CURLINFO_PRIVATE, &private_data);
@@ -364,7 +366,7 @@ int run_loop(const char* urls[], const int url_count) {
     //initialize the curl multi handle and set the socket and timer callbacks.
     create_and_init_multi_ez();
 
-    for (transfers = 0; transfers < POOL_SIZE; ++transfers) {
+    for (transfers = 0; transfers < EZ_POOL_SIZE; ++transfers) {
         fprintf(stderr, "adding \"%s\" to downloads...\n", urls[transfers]);
         add_download(urls[transfers], transfers);
     }
