@@ -30,6 +30,7 @@ typedef struct {
 static uv_loop_t *loop;
 static uv_timer_t *timeout;
 static curl_multi_ez_t curl_multi_ez;
+static int transfers;
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t realsize = size * nmemb;
@@ -113,7 +114,7 @@ static void check_multi_info(void) {
                 curl_multi_remove_handle(curl_multi_ez.curl_multi, ez);
 
                 //check if there are more downloads to add to the multihandle.
-                if () {
+                if (1) {
                 }
 
                 break;
@@ -253,10 +254,9 @@ int run_loop(const char* urls[], const int url_count) {
     //initialize the curl multi handle and set the socket and timer callbacks.
     create_and_init_multi_ez();
 
-    register int i;
-    for (i = 0; i < POOL_SIZE; ++i) {
-        fprintf(stderr, "adding \"%s\" to downloads...\n", urls[i]);
-        add_download(urls[i], i);
+    for (transfers = 0; transfers < POOL_SIZE; ++transfers) {
+        fprintf(stderr, "adding \"%s\" to downloads...\n", urls[transfers]);
+        add_download(urls[transfers], transfers);
     }
 
     fprintf(stderr, "Starting the event loop run....\n");
