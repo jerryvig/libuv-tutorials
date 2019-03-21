@@ -105,7 +105,7 @@ static int get_title(const char *response_text, char *title) {
     const char* parens_start = strstr(title_start, "(");
     const size_t diff = strlen(&title_start[7]) - strlen(parens_start);
     if (diff < 128) {
-        strncpy(title, &title_start[7], diff);
+        strncpy(title, &title_start[7], diff - 1);
         return 0;
     }
     printf("Failed to parse the title from the response.\n");
@@ -122,8 +122,7 @@ static void after_work(uv_work_t *job, int status) {
 static void do_work(uv_work_t *job) {
     char *response_text = (char*)job->data;
     char title[128];
-    int title_failure = get_title(response_text, title);
-    if (!title_failure) {
+    if (!get_title(response_text, title)) {
         printf("extracted the title as \"%s\".\n", title);
     }
 }
@@ -380,7 +379,6 @@ int run_loop(const char* urls[], const int url_count) {
 
 int main(void) {
     putenv("UV_THREADPOOL_SIZE=" STRINGIFY(THREAD_POOL_SIZE));
-    printf("UV_THREADPOOL_SIZE = %s\n", getenv("UV_THREADPOOL_SIZE"));
 
     num_urls = sizeof(urls) / sizeof(char *);
 
