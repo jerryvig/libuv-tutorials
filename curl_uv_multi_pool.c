@@ -11,6 +11,10 @@
 #include <uv.h>
 #include <curl/curl.h>
 
+#define STRINGIFY2(X) #X
+#define STRINGIFY(X) STRINGIFY2(X)
+#define THREAD_POOL_SIZE 4
+
 typedef struct curl_context_s {
     uv_poll_t poll_handle;
     curl_socket_t sockfd;
@@ -95,6 +99,19 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *us
     return nitems * size;
 }
 
+static void after_work(uv_work_t *job, int status) {
+    if (!status) {
+        free(job->data);
+        free(job);
+    }
+}
+
+static void do_work(uv_work_t *job) {
+    printf("in do_work()\n");
+    char *memory_buffer = (char*)job->data;
+    printf("memory_buffer = %s\n", memory_buffer);
+}
+
 static curl_context_t* create_curl_context(curl_socket_t sockfd) {
     //allocate the curl context for the socket.
     curl_context_t *context = (curl_context_t*)malloc(sizeof(curl_context_t));
@@ -149,11 +166,10 @@ static void check_multi_info(void) {
 
                 if (private_data) {
                     memory_t *buffer = private_data->buffer;
-                    printf("buffer = %s\n", buffer->memory);
 
-                    //You would begin processing the data here, so I think this is where
-                    // you would init threads for a work queue.
-
+                    uv_work_t *job = (uv_work_t*)malloc(sizeof(uv_work_t));
+                    job->data = (void*)buffer->memory;
+                    uv_queue_work(loop, job, do_work, after_work);
                 }
 
                 curl_multi_remove_handle(curl_multi_ez.curl_multi, ez);
@@ -161,13 +177,14 @@ static void check_multi_info(void) {
                 //check if there are more downloads to add to the multihandle.
                 if (transfers < num_urls) {
                     memory_t *buffer = private_data->buffer;
-                    free(buffer->memory);
 
                     //Reset the buffer on the ez handle.
                     buffer->memory = (char*)malloc(1);
                     buffer->size = 0;
 
                     add_download(urls[transfers], transfers++);
+                } else {
+                    private_data->buffer->memory = NULL;
                 }
 
                 break;
@@ -345,6 +362,9 @@ int run_loop(const char* urls[], const int url_count) {
 }
 
 int main(void) {
+    putenv("UV_THREADPOOL_SIZE=" STRINGIFY(THREAD_POOL_SIZE));
+    printf("UV_THREADPOOL_SIZE = %s\n", getenv("UV_THREADPOOL_SIZE"));
+
     num_urls = sizeof(urls) / sizeof(char *);
 
     int loop_success = run_loop(urls, num_urls);
