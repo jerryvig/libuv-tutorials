@@ -111,12 +111,11 @@ static void check_multi_info(void) {
                 }
 
                 curl_multi_remove_handle(curl_multi_ez.curl_multi, ez);
-                //curl_easy_cleanup(ez);
-                //if (buffer) {
-                //    printf("buffer = \"%s\"", buffer->memory);
-                //    free(buffer->memory);
-                //    free(buffer);
-                //}
+
+                //check if there are more downloads to add to the multihandle.
+                if () {
+                }
+
                 break;
             default:
                 fprintf(stderr, "CURLMSG default\n");
