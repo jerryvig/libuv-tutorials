@@ -99,6 +99,19 @@ static size_t header_callback(char *buffer, size_t size, size_t nitems, void *us
     return nitems * size;
 }
 
+static int get_title(const char *response_text, char *title) {
+    memset(title, 0, 128);
+    const char* title_start = strstr(response_text, "<title>");
+    const char* parens_start = strstr(title_start, "(");
+    const size_t diff = strlen(&title_start[7]) - strlen(parens_start);
+    if (diff < 128) {
+        strncpy(title, &title_start[7], diff);
+        return 0;
+    }
+    printf("Failed to parse the title from the response.\n");
+    return 1;
+}
+
 static void after_work(uv_work_t *job, int status) {
     if (!status) {
         free(job->data);
@@ -107,9 +120,12 @@ static void after_work(uv_work_t *job, int status) {
 }
 
 static void do_work(uv_work_t *job) {
-    printf("in do_work()\n");
-    char *memory_buffer = (char*)job->data;
-    printf("memory_buffer = %s\n", memory_buffer);
+    char *response_text = (char*)job->data;
+    char title[128];
+    int title_failure = get_title(response_text, title);
+    if (!title_failure) {
+        printf("extracted the title as \"%s\".\n", title);
+    }
 }
 
 static curl_context_t* create_curl_context(curl_socket_t sockfd) {
@@ -167,6 +183,7 @@ static void check_multi_info(void) {
                 if (private_data) {
                     memory_t *buffer = private_data->buffer;
 
+                    //queue the job on the worker thread in the thread pool.
                     uv_work_t *job = (uv_work_t*)malloc(sizeof(uv_work_t));
                     job->data = (void*)buffer->memory;
                     uv_queue_work(loop, job, do_work, after_work);
