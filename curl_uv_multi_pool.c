@@ -28,9 +28,36 @@ typedef struct {
 } curl_multi_ez_t;
 
 static uv_loop_t *loop;
-static uv_timer_t *timeout;
+static uv_timer_t timeout;
 static curl_multi_ez_t curl_multi_ez;
 static int transfers;
+static int num_urls;
+static char *urls[] = {
+        "https://finance.yahoo.com/quote/AAL/history",
+        "https://finance.yahoo.com/quote/AAPL/history",
+        "https://finance.yahoo.com/quote/ADBE/history",
+        "https://finance.yahoo.com/quote/ADI/history",
+        "https://finance.yahoo.com/quote/ADP/history",
+        "https://finance.yahoo.com/quote/ADSK/history",
+        "https://finance.yahoo.com/quote/ALGN/history",
+        "https://finance.yahoo.com/quote/ALXN/history",
+        "https://finance.yahoo.com/quote/AMAT/history",
+        "https://finance.yahoo.com/quote/AMD/history",
+        "https://finance.yahoo.com/quote/AMGN/history",
+        "https://finance.yahoo.com/quote/AMZN/history",
+        "https://finance.yahoo.com/quote/ASML/history",
+        "https://finance.yahoo.com/quote/ATVI/history",
+        "https://finance.yahoo.com/quote/AVGO/history",
+        "https://finance.yahoo.com/quote/BIDU/history",
+        "https://finance.yahoo.com/quote/BIIB/history",
+        "https://finance.yahoo.com/quote/BKNG/history",
+        "https://finance.yahoo.com/quote/BMRN/history",
+        "https://finance.yahoo.com/quote/CDNS/history",
+        "https://finance.yahoo.com/quote/CELG/history",
+        "https://finance.yahoo.com/quote/CERN/history",
+        "https://finance.yahoo.com/quote/CHKP/history",
+        "https://finance.yahoo.com/quote/CHTR/history"
+};
 
 static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t realsize = size * nmemb;
@@ -47,6 +74,19 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
     mem->size += realsize;
     mem->memory[mem->size] = 0;
     return realsize;
+}
+
+//This is for extracting the ticker symbol from the returned headers.
+static size_t header_callback(char *buffer, size_t size, size_t nitems, void *userdata) {
+    const char *prefix = "content-disposition";
+    if (strncmp(prefix, buffer, strlen(prefix)) == 0) {
+        const char *filename = strstr(buffer, "filename=");
+        const char *period = strstr(&filename[9], ".");
+        char *ticker = (char*)userdata;
+        memset(ticker, 0, 8);
+        strncpy(ticker, &filename[9], strlen(&filename[9]) - strlen(period));
+    }
+    return nitems * size;
 }
 
 static curl_context_t* create_curl_context(curl_socket_t sockfd) {
@@ -106,15 +146,20 @@ static void check_multi_info(void) {
 
                     //You would begin processing the data here, so I think this is where
                     // you would init threads for a work queue.
-                    free(buffer->memory);
-                    buffer->memory = (char*)malloc(1);
-                    buffer->size = 0;
+
                 }
 
                 curl_multi_remove_handle(curl_multi_ez.curl_multi, ez);
 
                 //check if there are more downloads to add to the multihandle.
-                if (1) {
+                if (transfers < num_urls) {
+                    free(buffer->memory);
+
+                    //Reset the buffer on the ez handle.
+                    buffer->memory = (char*)malloc(1);
+                    buffer->size = 0;
+
+                    add_download(urls[transfers], transfers++);
                 }
 
                 break;
@@ -219,14 +264,13 @@ CURL *create_and_init_curl(void) {
     curl_easy_setopt(ez, CURLOPT_TCP_NODELAY, 0);
     curl_easy_setopt(ez, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
     curl_easy_setopt(ez, CURLOPT_WRITEFUNCTION, &write_callback);
-    //put the header function back.
-    // curl_easy_setopt(ez, CURLOPT_HEADERFUNCTION, &header_callback);
+    curl_easy_setopt(ez, CURLOPT_HEADERFUNCTION, &header_callback);
     return ez;
 }
 
 static void create_and_init_multi_ez() {
     curl_multi_ez.curl_multi = create_and_init_curl_multi();
-    for (int i = 0; i < POOL_SIZE; ++i) {
+    for (register int i = 0; i < POOL_SIZE; ++i) {
         curl_multi_ez.ez_pool[i] = create_and_init_curl();
 
         memory_t *buffer = (memory_t*)malloc(sizeof(memory_t));
@@ -236,6 +280,24 @@ static void create_and_init_multi_ez() {
         curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_WRITEDATA, (void*)buffer);
         curl_easy_setopt(curl_multi_ez.ez_pool[i], CURLOPT_PRIVATE, buffer);
     }
+}
+
+static void cleanup_curl_multi_ez() {
+    for (register int i = 0; i < POOL_SIZE; ++i) {
+        CURL *ez = curl_multi_ez.ez_pool[i];
+        memory_t *buffer;
+        curl_easy_getinfo(curl_multi_ez.ez_pool[i], CURLINFO_PRIVATE, &buffer);
+        if (buffer != NULL) {
+            if (buffer->memory != NULL) {
+                free(buffer->memory);
+            }
+            free(buffer);
+        }
+        curl_easy_cleanup(curl_multi_ez.ez_pool[i]);
+    }
+
+    curl_multi_cleanup(curl_multi_ez.curl_multi);
+    curl_global_cleanup();
 }
 
 int run_loop(const char* urls[], const int url_count) {
@@ -248,8 +310,7 @@ int run_loop(const char* urls[], const int url_count) {
     loop = uv_default_loop();
 
     //allocate the timeout and init the timeout.
-    timeout = (uv_timer_t*)malloc(sizeof(uv_timer_t));
-    uv_timer_init(loop, timeout);
+    uv_timer_init(loop, &timeout);
 
     //initialize the curl multi handle and set the socket and timer callbacks.
     create_and_init_multi_ez();
@@ -263,44 +324,14 @@ int run_loop(const char* urls[], const int url_count) {
     uv_run(loop, UV_RUN_DEFAULT);
     fprintf(stderr, "event loop run ended...shutting down...\n");
 
-    //TODO: cleanup all of the ez handles and their write-buffers here.
-
-    curl_multi_cleanup(curl_multi_ez.curl_multi);
-    curl_global_cleanup();
-    free(timeout);
+    cleanup_curl_multi_ez();
     return 0;
 }
 
 int main(void) {
-    const char *urls[] = {
-            "https://finance.yahoo.com/quote/AAL/history",
-            "https://finance.yahoo.com/quote/AAPL/history",
-            "https://finance.yahoo.com/quote/ADBE/history",
-            "https://finance.yahoo.com/quote/ADI/history",
-            "https://finance.yahoo.com/quote/ADP/history",
-            "https://finance.yahoo.com/quote/ADSK/history",
-            "https://finance.yahoo.com/quote/ALGN/history",
-            "https://finance.yahoo.com/quote/ALXN/history",
-            "https://finance.yahoo.com/quote/AMAT/history",
-            "https://finance.yahoo.com/quote/AMD/history",
-            "https://finance.yahoo.com/quote/AMGN/history",
-            "https://finance.yahoo.com/quote/AMZN/history",
-            "https://finance.yahoo.com/quote/ASML/history",
-            "https://finance.yahoo.com/quote/ATVI/history",
-            "https://finance.yahoo.com/quote/AVGO/history",
-            "https://finance.yahoo.com/quote/BIDU/history",
-            "https://finance.yahoo.com/quote/BIIB/history",
-            "https://finance.yahoo.com/quote/BKNG/history",
-            "https://finance.yahoo.com/quote/BMRN/history",
-            "https://finance.yahoo.com/quote/CDNS/history",
-            "https://finance.yahoo.com/quote/CELG/history",
-            "https://finance.yahoo.com/quote/CERN/history",
-            "https://finance.yahoo.com/quote/CHKP/history",
-            "https://finance.yahoo.com/quote/CHTR/history"
-    };
-    const int url_count = sizeof(urls) / sizeof(char *);
+    num_urls = sizeof(urls) / sizeof(char *);
 
-    int loop_success = run_loop(urls, url_count);
+    int loop_success = run_loop(urls, num_urls);
     if (!loop_success) {
         return EXIT_FAILURE;
     }
