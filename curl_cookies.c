@@ -8,7 +8,6 @@ static void print_cookies(const CURL *ez) {
     struct curl_slist *cookie_head;
     struct curl_slist *next_cookie;
 
-
     puts("\nCookies, curl knows:\n");
     res = curl_easy_getinfo(ez, CURLINFO_COOKIELIST, &cookie_head);
     if (res != CURLE_OK) {
@@ -37,7 +36,7 @@ int main(void) {
 
     if (ez) {
         curl_easy_setopt(ez, CURLOPT_URL, "http://www.google.com/");
-        // curl_easy_setopt(ez, CURLOPT_VERBOSE, 1L);
+        curl_easy_setopt(ez, CURLOPT_VERBOSE, 1L);
         curl_easy_setopt(ez, CURLOPT_COOKIEFILE, "");
 
         res = curl_easy_perform(ez);
